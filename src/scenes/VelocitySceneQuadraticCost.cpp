@@ -82,7 +82,7 @@ const HierarchicalQP& VelocitySceneQuadraticCost::update(){
             constraint->A = robot_model->COMJacobian();
 
             // Convert constraint twist to robot base_coords
-            base::MatrixXd rot_mat = robot_model->rigidBodyState(robot_model->baseFrame(), "world").pose.orientation.toRotationMatrix();
+            base::MatrixXd rot_mat = robot_model->rigidBodyState(robot_model->baseFrame(), constraint->config.ref_frame).pose.orientation.toRotationMatrix();
             constraint->y_ref_root = rot_mat * constraint->y_ref;
 
             // Also convert the weight vector from ref frame to the root frame. Take the absolute values after rotation, since weights can only
