@@ -16,7 +16,8 @@ namespace wbc{
  */
 enum ConstraintType{unset = -1,
                     jnt = 0,
-                    cart = 1};
+                    cart = 1,
+                    com = 2};
 
 /**
  * @brief Defines a constraint in the whole body control problem. Valid Configurations are e.g.
@@ -34,6 +35,13 @@ enum ConstraintType{unset = -1,
  *          joint_names = ["J_1", "J_2", "J_3"]
  *          activation = 1
  *          timeout = 3.0
+ *
+ *        - constraint_type = com
+ *          name = "com_position_control"
+ *          priority = 0
+ *          root_frame = "Robot_base"
+ *          ref_frame = "world"
+ *          activation = 0
  */
 class ConstraintConfig{
 
@@ -54,6 +62,12 @@ public:
                      const std::vector<std::string> joint_names,
                      const std::vector<double> weights,
                      const double activation = 0,
+                     const double timeout = 0);
+    ConstraintConfig(const std::string &name,
+                     const int priority,
+                     const std::string ref_frame,
+                     const double activation = 0,
+                     const std::vector<double> weights = {1,1,1},
                      const double timeout = 0);
     ~ConstraintConfig();
 

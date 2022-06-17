@@ -45,6 +45,21 @@ ConstraintConfig::ConstraintConfig(const std::string &name,
     timeout(timeout){
 }
 
+ConstraintConfig::ConstraintConfig(const std::string &name,
+                                   const int priority,
+                                   const std::string ref_frame,
+                                   const double activation,
+                                   const std::vector<double> weights,
+                                   const double timeout) : 
+    name(name),
+    type(com),
+    priority(priority),
+    weights(weights),
+    activation(activation),
+    timeout(timeout),
+    ref_frame(ref_frame){
+}
+
 ConstraintConfig::~ConstraintConfig(){
 }
 
@@ -72,6 +87,14 @@ void ConstraintConfig::validate() const{
             LOG_ERROR("Constraint %s: Size of weight vector should be 6, but is %i", name.c_str(), weights.size());
             throw std::invalid_argument("Invalid constraint config");}
     }
+    else if(type == com){
+        if(ref_frame.empty()){
+            LOG_ERROR("Constraint %s: Ref frame is empty", name.c_str());
+            throw std::invalid_argument("Invalid constraint config");}
+        if(weights.size() != 3){
+            LOG_ERROR("Constraint %s: Size of weight vector should be 3, but is %i", name.c_str(), weights.size());
+            throw std::invalid_argument("Invalid constraint config");}
+    }
     else if(type == jnt){
         if(weights.size() != joint_names.size()){
             LOG_ERROR("Constraint %s: Size of weight vector should be %i, but is %i", name.c_str(), joint_names.size(), weights.size());
@@ -94,6 +117,8 @@ void ConstraintConfig::validate() const{
 unsigned int ConstraintConfig::nVariables() const{
     if(type == cart)
         return 6;
+    else if(type == com)
+        return 3;
     else
         return joint_names.size();
 }

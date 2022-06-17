@@ -378,6 +378,11 @@ const base::MatrixXd& RobotModelKDL::bodyJacobian(const std::string &root_frame,
     return body_jac_map[chain_id];
 }
 
+const base::MatrixXd &RobotModelKDL::COMJacobian(){
+
+    throw std::runtime_error("Not implemented: COMJacobian has not been implemented for RobotModelKDL");
+}
+
 const base::MatrixXd &RobotModelKDL::jacobianDot(const std::string &root_frame, const std::string &tip_frame){
 
     if(current_joint_state.time.isNull()){

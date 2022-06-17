@@ -31,6 +31,7 @@ protected:
     urdf::ModelInterfaceSharedPtr robot_urdf;
     base::samples::RigidBodyStateSE3 com_rbs;
     base::MatrixXd jacobian;
+    base::MatrixXd com_jacobian;
     hyrodyn::RobotModel_HyRoDyn hyrodyn;
 
     void clear();
@@ -84,6 +85,14 @@ public:
       * @param tip_frame Tip frame of the chain. Has to be a valid link in the robot model.
       */
     virtual const base::MatrixXd &bodyJacobian(const std::string &root_frame, const std::string &tip_frame);
+
+    /** @brief Returns the COM Jacobian for the full kinematic tree. Size of the Jacobian will be 3 x nJoints, where nJoints is the number of joints of the whole robot. The order of the
+      * columns will be the same as the configured joint order of the robot.
+      * @param root_frame Root frame of the chain. Has to be a valid link in the robot model.
+      * @param tip_frame Tip frame of the chain. Has to be a valid link in the robot model.
+      * @return A 6xN matrix, where N is the number of robot joints
+      */
+    virtual const base::MatrixXd &COMJacobian();
 
     /** @brief Returns the derivative of the Jacobian for the kinematic chain between root and the tip frame as full body Jacobian. By convention reference frame & reference point
       *  of the Jacobian will be the root frame (corresponding to the body Jacobian). Size of the Jacobian will be 6 x nJoints, where nJoints is the number of joints of the whole robot. The order of the

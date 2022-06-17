@@ -74,6 +74,22 @@ const HierarchicalQP& VelocitySceneQuadraticCost::update(){
                 constraint->weights_root = constraint->weights; // Same of the weights
             }
         }
+        else if(type == com)
+        {
+            CartesianVelocityConstraintPtr constraint = std::static_pointer_cast<CartesianVelocityConstraint>(constraints[prio][i]);
+
+            // Constraint COM Jacobian in robot base coordinates (if floating base: before floating base joint)
+            constraint->A = robot_model->COMJacobian();
+
+            // Convert constraint twist to robot base_coords
+            base::MatrixXd rot_mat = robot_model->rigidBodyState(robot_model->baseFrame(), "world").pose.orientation.toRotationMatrix();
+            constraint->y_ref_root = rot_mat * constraint->y_ref;
+
+            // Also convert the weight vector from ref frame to the root frame. Take the absolute values after rotation, since weights can only
+            // assume positive values
+            constraint->weights_root = rot_mat * constraint->weights;
+            constraint->weights_root = constraint->weights_root.cwiseAbs();
+        }
         else{
             LOG_ERROR("Constraint %s: Invalid type: %i", constraints[prio][i]->config.name.c_str(), type);
             throw std::invalid_argument("Invalid constraint configuration");

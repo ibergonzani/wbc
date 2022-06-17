@@ -117,6 +117,10 @@ bool RobotModelHyrodyn::configure(const RobotModelConfig& cfg){
 
     jacobian.resize(6,noOfJoints());
     jacobian.setConstant(std::numeric_limits<double>::quiet_NaN());
+
+    com_jacobian.resize(3,noOfJoints());
+    com_jacobian.setConstant(std::numeric_limits<double>::quiet_NaN());
+
     base_frame =  robot_urdf->getRoot()->name;
     active_contacts = cfg.contact_points;
     joint_space_inertia_mat.resize(noOfJoints(), noOfJoints());
@@ -327,6 +331,25 @@ const base::MatrixXd &RobotModelHyrodyn::bodyJacobian(const std::string &root_fr
     }
 
     return jacobian;
+}
+
+
+const base::MatrixXd &RobotModelHyrodyn::COMJacobian() {
+    if(joint_state.time.isNull()){
+        LOG_ERROR("RobotModelKDL: You have to call update() with appropriately timestamped joint data at least once before requesting kinematic information!");
+        throw std::runtime_error(" Invalid call to bodyJacobian()");
+    }
+
+    if(hyrodyn.floating_base_robot){
+        hyrodyn.calculate_com_jacobian_actuation_space_including_floating_base();
+        com_jacobian = hyrodyn.Jcomufb;
+    }
+    else{
+        hyrodyn.calculate_com_jacobian_actuation_space();
+        com_jacobian = hyrodyn.Jcomu;
+    }
+
+    return com_jacobian;
 }
 
 const base::MatrixXd &RobotModelHyrodyn::jacobianDot(const std::string &root_frame, const std::string &tip_frame){
