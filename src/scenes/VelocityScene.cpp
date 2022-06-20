@@ -3,6 +3,7 @@
 #include <base-logging/Logging.hpp>
 #include "../core/JointVelocityConstraint.hpp"
 #include "../core/CartesianVelocityConstraint.hpp"
+#include "../core/COMVelocityConstraint.hpp"
 
 namespace wbc{
 
@@ -12,6 +13,8 @@ ConstraintPtr VelocityScene::createConstraint(const ConstraintConfig &config){
         return std::make_shared<CartesianVelocityConstraint>(config, robot_model->noOfJoints());
     else if(config.type == jnt)
         return std::make_shared<JointVelocityConstraint>(config, robot_model->noOfJoints());
+    else if(config.type == com)
+        return std::make_shared<COMVelocityConstraint>(config, robot_model->noOfJoints());
     else{
         LOG_ERROR("Constraint with name %s has an invalid constraint type: %i", config.name.c_str(), config.type);
         throw std::invalid_argument("Invalid constraint config");
@@ -76,6 +79,24 @@ const HierarchicalQP& VelocityScene::update(){
                     constraint->y_ref_root = constraint->y_ref;     // In joint space y_ref is equal to y_ref_root
                     constraint->weights_root = constraint->weights; // Same of the weights
                 }
+            }
+            else if(type == com) {
+                COMVelocityConstraintPtr constraint = std::static_pointer_cast<COMVelocityConstraint>(constraints[prio][i]);
+
+                // Constraint Jacobian
+                constraint->A = robot_model->COMJacobian();
+
+                // Constraint reference
+                // Convert input twist from the reference frame of the constraint to the base frame of the robot. We transform only the orientation of the
+                // reference frame to which the twist is expressed, NOT the position. This means that the center of rotation for a COM constraint will
+                // be the origin of ref frame, not the root frame. This is more intuitive when controlling the orientation of e.g. a robot' s end effector.
+                ref_frame = robot_model->rigidBodyState(robot_model->baseFrame(), constraint->config.ref_frame);
+                constraint->y_ref_root = ref_frame.pose.orientation.toRotationMatrix() * constraint->y_ref;
+
+                // Also convert the weight vector from ref frame to the root frame. Take the absolute values after rotation, since weights can only
+                // assume positive values
+                constraint->weights_root = ref_frame.pose.orientation.toRotationMatrix() * constraint->weights;
+                constraint->weights_root = constraint->weights_root.cwiseAbs();
             }
             else{
                 LOG_ERROR("Constraint %s: Invalid type: %i", constraints[prio][i]->config.name.c_str(), type);

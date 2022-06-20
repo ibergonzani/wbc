@@ -2,6 +2,7 @@
 #include <base/JointLimits.hpp>
 #include <base-logging/Logging.hpp>
 #include "../core/CartesianVelocityConstraint.hpp"
+#include "../core/COMVelocityConstraint.hpp"
 #include "../core/JointVelocityConstraint.hpp"
 
 namespace wbc{
@@ -76,13 +77,13 @@ const HierarchicalQP& VelocitySceneQuadraticCost::update(){
         }
         else if(type == com)
         {
-            CartesianVelocityConstraintPtr constraint = std::static_pointer_cast<CartesianVelocityConstraint>(constraints[prio][i]);
+            COMVelocityConstraintPtr constraint = std::static_pointer_cast<COMVelocityConstraint>(constraints[prio][i]);
 
             // Constraint COM Jacobian in robot base coordinates (if floating base: before floating base joint)
             constraint->A = robot_model->COMJacobian();
 
             // Convert constraint twist to robot base_coords
-            base::MatrixXd rot_mat = robot_model->rigidBodyState(robot_model->baseFrame(), constraint->config.ref_frame).pose.orientation.toRotationMatrix();
+            base::MatrixXd rot_mat = robot_model->floatingBaseState().pose.orientation.toRotationMatrix().transpose(); //robot_model->rigidBodyState(robot_model->baseFrame(), constraint->config.ref_frame).pose.orientation.toRotationMatrix();
             constraint->y_ref_root = rot_mat * constraint->y_ref;
 
             // Also convert the weight vector from ref frame to the root frame. Take the absolute values after rotation, since weights can only

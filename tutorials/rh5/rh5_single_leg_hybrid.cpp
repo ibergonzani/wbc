@@ -50,8 +50,17 @@ int main(){
     cart_constraint.ref_frame = "RH5_Root_Link";   // In what frame is the task specified?
     cart_constraint.activation = 1;                // (0..1) initial task activation. 1 - Task should be active initially
     cart_constraint.weights = vector<double>(6,1); // Task weights. Can be used to balance the relativ importance of the task variables (e.g. position vs. orienration)
+    
+    ConstraintConfig com_constraint;
+    com_constraint.name = "com_position";     // unique id
+    com_constraint.type = com;                   // Cartesian or joint space task?
+    com_constraint.priority = 0;                  // Priority, 0 - highest prio
+    com_constraint.ref_frame = "world";   // In what frame is the task specified?
+    com_constraint.activation = 1;                // (0..1) initial task activation. 1 - Task should be active initially
+    com_constraint.weights = vector<double>(3,1);
+
     VelocitySceneQuadraticCost scene(robot_model, solver);
-    if(!scene.configure({cart_constraint}))
+    if(!scene.configure({com_constraint}))
         return -1;
 
     // Configure the controller. In this case, we use a Cartesian position controller. The controller implements the following control law:
@@ -61,6 +70,9 @@ int main(){
     // As we don't use feed forward velocity here, we can ignore the factor kd.
     CartesianPosPDController controller;
     controller.setPGain(base::Vector6d::Constant(10));
+
+    CartesianPosPDController com_controller;
+    com_controller.setPGain(base::Vector6d::Constant(10));
 
     // Choose an initial joint state. For velocity-based WBC only the current position of all joint has to be passed.
     // Note that WBC takes as input ALWAYS the independent joints, no matter what robot model is used.
@@ -74,6 +86,8 @@ int main(){
         joint_state[i].position = init_q[i];
     joint_state.time = base::Time::now();
 
+    robot_model->update(joint_state);
+
     // Choose a valid reference pose x_r, which is defined in cart_constraint.ref_frame and defines the desired pose of
     // the cart_constraint.ref_tip frame. The pose will be passed as setpoint to the controller.
     base::samples::RigidBodyStateSE3 setpoint, feedback, ctrl_output;
@@ -83,10 +97,22 @@ int main(){
     feedback.pose.position.setZero();
     feedback.pose.orientation.setIdentity();
 
+    base::samples::RigidBodyStateSE3 com_setpoint, com_feedback, com_ctrl_output;
+    com_setpoint.pose.position = robot_model->centerOfMass().pose.position + base::Vector3d(0,0, -0.1);
+    com_setpoint.pose.orientation.setIdentity();
+    com_setpoint.frame_id = cart_constraint.ref_frame;
+    com_feedback.pose.position.setZero();
+    com_feedback.pose.orientation.setIdentity();
+
+
+    std::clog << "Start simulation" << std::endl;
+
+
+
     // Run control loop
     double loop_time = 0.001; // seconds
     base::commands::Joints solver_output;
-    while((setpoint.pose.position - feedback.pose.position).norm() > 1e-3){
+    while((com_setpoint.pose.position - com_feedback.pose.position).norm() > 1e-3){
 
         // Update the robot model. WBC will only work if at least one joint state with valid timestamp has been passed to the robot model
         robot_model->update(joint_state);
@@ -95,9 +121,13 @@ int main(){
         feedback = robot_model->rigidBodyState(cart_constraint.root, cart_constraint.tip);
         ctrl_output = controller.update(setpoint, feedback);
 
+        com_feedback = robot_model->centerOfMass();
+        com_ctrl_output = controller.update(com_setpoint, com_feedback);
+
         // Update constraints. Pass the control output of the solver to the corresponding constraint.
         // The control output is the gradient of the task function that is to be minimized during execution.
-        scene.setReference(cart_constraint.name, ctrl_output);
+        //scene.setReference(cart_constraint.name, ctrl_output);
+        scene.setReference(com_constraint.name, com_ctrl_output);
 
         // Update WBC scene. The output is a (hierarchical) quadratic program (QP), which can be solved by any standard QP solver
         HierarchicalQP hqp = scene.update();
@@ -121,6 +151,8 @@ int main(){
         cout<<"setpoint: qx:   "<<setpoint.pose.orientation.x()<<" qy: "<<setpoint.pose.orientation.y()<<" qz: "<<setpoint.pose.orientation.z()<<" qw: "<<setpoint.pose.orientation.w()<<endl<<endl;
         cout<<"feedback x:     "<<feedback.pose.position(0)<<" y: "<<feedback.pose.position(1)<<" z: "<<feedback.pose.position(2)<<endl;
         cout<<"feedback qx:    "<<feedback.pose.orientation.x()<<" qy: "<<feedback.pose.orientation.y()<<" qz: "<<feedback.pose.orientation.z()<<" qw: "<<feedback.pose.orientation.w()<<endl<<endl;
+        cout<<"com_setpoint: x:"<<com_setpoint.pose.position(0)<<" y: "<<com_setpoint.pose.position(1)<<" z: "<<com_setpoint.pose.position(2)<<endl;
+        cout<<"com_feedback x: "<<com_feedback.pose.position(0)<<" y: "<<com_feedback.pose.position(1)<<" z: "<<com_feedback.pose.position(2)<<endl;
         cout<<"Solver output:  "; cout<<endl;
         cout<<"Joint Names:    "; for(int i = 0; i < nj; i++) cout<<solver_output.names[i]<<" "; cout<<endl;
         cout<<"Velocity:       "; for(int i = 0; i < nj; i++) cout<<solver_output[i].speed<<" "; cout<<endl;

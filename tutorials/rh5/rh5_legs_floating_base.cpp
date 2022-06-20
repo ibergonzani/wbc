@@ -1,5 +1,6 @@
 #include <solvers/qpoases/QPOasesSolver.hpp>
 #include <robot_models/kdl/RobotModelKDL.hpp>
+#include <robot_models/hyrodyn/RobotModelHyrodyn.hpp>
 #include <core/RobotModelConfig.hpp>
 #include <scenes/VelocitySceneQuadraticCost.hpp>
 #include <controllers/CartesianPosPDController.hpp>
@@ -42,7 +43,7 @@ using namespace ctrl_lib;
 int main(){
 
     // Create KDL based robot model
-    RobotModelPtr robot_model = std::make_shared<RobotModelKDL>();
+    RobotModelPtr robot_model = std::make_shared<RobotModelHyrodyn>();
 
     // Configure a serial robot model with floating base and two contact points: {"LLAnkle_FT", "LRAnkle_FT"}.
     // Note that the joint names have to contain {"floating_base_trans_x", "floating_base_trans_y", "floating_base_trans_z",
@@ -54,6 +55,7 @@ int main(){
     floating_base_state.twist.setZero();
     floating_base_state.acceleration.setZero();
     floating_base_state.time = base::Time::now();
+    
     RobotModelConfig config;
     config.file = "../../../models/rh5/urdf/rh5_legs.urdf";
     config.joint_names = {"floating_base_trans_x", "floating_base_trans_y", "floating_base_trans_z",
@@ -85,7 +87,7 @@ int main(){
     // rigid contact constraints for the feet contacts. Create a task for controlling the root link in
     // world coordinates
     ConstraintConfig cart_constraint;
-    cart_constraint.name = "com_position";
+    cart_constraint.name = "root_position";
     cart_constraint.type = cart;
     cart_constraint.priority = 0;
     cart_constraint.root = "world";
@@ -93,8 +95,17 @@ int main(){
     cart_constraint.ref_frame = "world";
     cart_constraint.activation = 1;
     cart_constraint.weights = vector<double>(6,1);
+
+    ConstraintConfig com_constraint;
+    com_constraint.name = "com_position";
+    com_constraint.type = com;
+    com_constraint.priority = 0;
+    com_constraint.ref_frame = "world";
+    com_constraint.activation = 1;
+    com_constraint.weights = vector<double>(3,1);
+
     VelocitySceneQuadraticCost scene(robot_model, solver);
-    if(!scene.configure({cart_constraint}))
+    if(!scene.configure({cart_constraint, com_constraint}))
         return -1;
 
     // Configure the controller. In this case, we use a Cartesian position controller. The controller implements the following control law:
@@ -104,6 +115,10 @@ int main(){
     // As we don't use feed forward velocity here, we can ignore the factor kd.
     CartesianPosPDController controller;
     controller.setPGain(base::Vector6d::Constant(3));
+
+
+    CartesianPosPDController com_controller;
+    com_controller.setPGain(base::Vector6d::Constant(3));
 
     // Choose an initial joint state. For velocity-based WBC only the current position of all joint has to be passed.
     // Note that you don't have to pass the floating base pose here.
@@ -119,6 +134,8 @@ int main(){
     }
     joint_state.time = base::Time::now();
 
+    robot_model->update(joint_state, floating_base_state);
+
     // Choose a valid reference pose x_r, which is defined in cart_constraint.ref_frame and defines the desired pose of
     // the cart_constraint.ref_tip frame. The pose will be passed as setpoint to the controller.
     base::samples::RigidBodyStateSE3 setpoint, feedback, ctrl_output;
@@ -127,10 +144,19 @@ int main(){
     feedback.pose.position.setZero();
     feedback.pose.orientation.setIdentity();
 
+    base::samples::RigidBodyStateSE3 com_setpoint, com_feedback, com_ctrl_output;
+    com_setpoint = robot_model->centerOfMass();
+    com_setpoint.pose.position = com_setpoint.pose.position + base::Vector3d(-0.0,0.05,0.0);
+    com_setpoint.pose.orientation.setIdentity();
+    com_feedback.pose.position.setZero();
+    com_feedback.pose.orientation.setIdentity();
+
+
     // Run control loop
     double loop_time = 0.001; // seconds
     base::commands::Joints solver_output;
-    while((setpoint.pose.position - feedback.pose.position).norm() > 1e-4){
+    while((setpoint.pose.position - feedback.pose.position).norm() > 1e-4 
+        && (com_setpoint.pose.position - com_feedback.pose.position).norm() > 1e-4){
 
         // Update the robot model. WBC will only work if at least one joint state with valid timestamp has been passed to the robot model.
         // Note that you have to pass the floating base state as well now!
@@ -140,9 +166,14 @@ int main(){
         feedback = robot_model->rigidBodyState(cart_constraint.root, cart_constraint.tip);
         ctrl_output = controller.update(setpoint, feedback);
 
+        // com
+        com_feedback = robot_model->centerOfMass();
+        com_ctrl_output = com_controller.update(com_setpoint, com_feedback);
+
         // Update constraints. Pass the control output of the controller to the corresponding constraint.
         // The control output is the gradient of the task function that is to be minimized during execution.
         scene.setReference(cart_constraint.name, ctrl_output);
+        scene.setReference(com_constraint.name, com_ctrl_output);
 
         // Update WBC scene. The output is a (hierarchical) quadratic program (QP), which can be solved by any standard QP solver
         HierarchicalQP hqp = scene.update();
@@ -166,6 +197,9 @@ int main(){
         cout<<"setpoint: qx: "<<setpoint.pose.orientation.x()<<" qy: "<<setpoint.pose.orientation.y()<<" qz: "<<setpoint.pose.orientation.z()<<" qw: "<<setpoint.pose.orientation.w()<<endl<<endl;
         cout<<"feedback x: "<<feedback.pose.position(0)<<" y: "<<feedback.pose.position(1)<<" z: "<<feedback.pose.position(2)<<endl;
         cout<<"feedback qx: "<<feedback.pose.orientation.x()<<" qy: "<<feedback.pose.orientation.y()<<" qz: "<<feedback.pose.orientation.z()<<" qw: "<<feedback.pose.orientation.w()<<endl<<endl;
+        cout<<"com setpoint: x: "<<com_setpoint.pose.position(0)<<" y: "<<com_setpoint.pose.position(1)<<" z: "<<com_setpoint.pose.position(2)<<endl;
+        cout<<"com feedback x: "<<com_feedback.pose.position(0)<<" y: "<<com_feedback.pose.position(1)<<" z: "<<com_feedback.pose.position(2)<<endl;
+
         cout<<"Solver output: "; cout<<endl;
         cout<<"Joint Names:   "; for(int i = 0; i < nj; i++) cout<<solver_output.names[i]<<" "; cout<<endl;
         cout<<"Velocity:      "; for(int i = 0; i < nj; i++) cout<<solver_output[i].speed<<" "; cout<<endl;
